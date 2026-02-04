@@ -1,0 +1,47 @@
+name: CI-CD to EKS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: my-app
+  EKS_CLUSTER: my-eks-cicd
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::013121026673:role/GitHubActionsEKSRole
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        run: |
+          IMAGE_TAG=${GITHUB_SHA::7}
+          docker build -t my-app:$IMAGE_TAG .
+          docker tag my-app:$IMAGE_TAG 013121026673.dkr.ecr.us-east-1.amazonaws.com/my-app:$IMAGE_TAG
+          docker push 013121026673.dkr.ecr.us-east-1.amazonaws.com/my-app:$IMAGE_TAG
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region us-east-1 --name my-eks-cicd
+
+      - name: Deploy to EKS
+        run: |
+          kubectl set image deployment/my-app my-app=013121026673.dkr.ecr.us-east-1.amazonaws.com/my-app:$IMAGE_TAG
+          kubectl rollout status deployment/my-app
+
+
